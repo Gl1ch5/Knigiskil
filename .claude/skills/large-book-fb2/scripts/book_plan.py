@@ -49,7 +49,7 @@ def part_label(num):
 def layout(pages):
     """(частей, глав) для объёма: глава — полноценный эпизод на 12–28 страниц."""
     if pages <= 150:
-        cp, parts = 12, 1
+        cp, parts = 10, 1
     elif pages <= 400:
         cp, parts = 18, 2 if pages < 250 else 3
     elif pages <= 800:
@@ -58,7 +58,7 @@ def layout(pages):
         cp, parts = 25, min(6, max(4, math.ceil(pages / 350)))
     else:
         cp, parts = 28, math.ceil(pages / 500)
-    return parts, max(1, round(pages / cp))
+    return parts, max(4, round(pages / cp))
 
 
 def cmd_skeleton(a):
@@ -120,7 +120,7 @@ def problems(outline):
             miss.append("scenes")
         if miss:
             out.append("глава %d (часть %d): нет %s" % (ch["num"], part["num"], ", ".join(miss)))
-    for part in outline["parts"]:
+    for part in outline["parts"] if len(outline["parts"]) > 1 else []:
         if not str(part.get("title", "")).strip():
             out.append("часть %d: нет title" % part["num"])
     return out
@@ -213,7 +213,7 @@ def cmd_next(a):
     if not done:
         cum = target(ch)
         j = idx + 1
-        while (len(group) < 3 and j < len(flat) and not written(flat[j][1])
+        while (len(group) < 4 and j < len(flat) and not written(flat[j][1])
                and flat[j][0]["num"] == part["num"] and cum + target(flat[j][1]) <= WRITE_CHARS):
             cum += target(flat[j][1])
             group.append(j)
@@ -252,7 +252,8 @@ def cmd_next(a):
         if gch.get("ends_with"):
             out.append("Концовка (крючок): %s" % gch["ends_with"])
         out.append("Объём главы: не меньше %d знаков (~%s стр.)" % (target(gch), gch.get("target_pages")))
-    out += ["", "Написано: %d из %d знаков. Записать в: chapters/%s" % (done, need, nxt_file)]
+    out += ["", "Написано: %d из %d знаков, не хватает %d. Записать в: chapters/%s"
+            % (done, need, max(0, need - done), nxt_file)]
 
     sums = summaries(a.dir)
     prev = []
@@ -268,9 +269,12 @@ def cmd_next(a):
             break
     if prev:
         out += ["", "## Что было раньше (конспекты)"]
-        for pch, text in reversed(prev):
-            out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])),
-                                                text.replace("\n", " ")))
+        prev = list(reversed(prev))
+        for k, (pch, text) in enumerate(prev):
+            text = " ".join(text.split())
+            if k < len(prev) - 1 and len(text) > 400:  # полностью — только последний конспект
+                text = text[:400].rsplit(" ", 1)[0] + " …"
+            out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])), text))
     if group[-1] + 1 < len(flat):
         nch = flat[group[-1] + 1][1]
         out += ["", "## Следующая глава %d «%s»" % (nch["num"], nch.get("title", "")),

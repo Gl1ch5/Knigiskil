@@ -5,6 +5,7 @@
 
 С --chapter печатает подробный разбор главы, без него — сводку по книге.
 Это подсказки, а не приговор: смотри на найденные места и решай сам.
+«абз. N» — номер абзаца главы (без заголовка, пустых строк и «* * *»).
 """
 import argparse
 import re
@@ -53,8 +54,20 @@ def analyze(text):
     freq = Counter(w for w in words if len(w) >= 5 and w not in STOP and w not in caps)
     per10k = 10000.0 / chars
     over = [(w, c) for w, c in freq.most_common(15) if c * per10k >= 6 and c >= 6]
-    starts = [(WORD_RE.findall(s) or [""])[0].lower() for s in sents]
-    runs = sum(1 for i in range(2, len(starts)) if starts[i] and starts[i] == starts[i - 1] == starts[i - 2])
+    # 3+ фразы подряд с одного слова — только в повествовании (в репликах это часто намеренная анафора)
+    runs = []
+    for pi, l in enumerate(prose, 1):
+        if l.startswith(("—", "–", "-")):
+            continue
+        ss = sentences(l)
+        st = [(WORD_RE.findall(x) or [""])[0].lower() for x in ss]
+        for i in range(2, len(st)):
+            if st[i] and st[i] == st[i - 1] == st[i - 2]:
+                runs.append("абз. %d: «%s…»" % (pi, ss[i - 2][:40]))
+                break
+    where = {}
+    for w, _ in over:
+        where[w] = [pi for pi, l in enumerate(prose, 1) if re.search(r"\b%s\b" % w, l.lower())][:6]
     cliche = [m.group(0) for r in CLICHES for m in re.finditer(r, low)]
     kants = [m.group(0) for r in KANTS for m in re.finditer(r, low)]
     para = [len(l) for l in prose] or [0]
@@ -69,6 +82,8 @@ def analyze(text):
         "similes": len(SIMILE_RE.findall(body)) * per10k,
         "over": over,
         "runs": runs,
+        "where": where,
+        "paras": len(prose),
         "cliche": cliche,
         "kants": kants,
         "weak_open": bool(re.search(r"проснул|открыл\w* глаза|утро (было|выдалось)|солнце (вставало|светило)", first)),
@@ -78,8 +93,10 @@ def analyze(text):
 
 def warnings(r, target):
     w = []
-    if target and r["chars"] < target * 0.7:
-        w.append("коротко: %d из %d знаков" % (r["chars"], target))
+    if target and r["chars"] < target * 0.9:
+        w.append("%s: %d из %d знаков, не хватает %d — допиши сценой, не водой"
+                 % ("коротко" if r["chars"] < target * 0.7 else "чуть меньше цели",
+                    r["chars"], target, target - r["chars"]))
     if r["sent_var"] < 0.45:
         w.append("монотонный ритм фраз (разброс %.2f) — чередуй короткие и длинные" % r["sent_var"])
     if r["para_var"] < 0.35:
@@ -89,9 +106,10 @@ def warnings(r, target):
     if r["similes"] > 12:
         w.append("много сравнений «словно/будто»: %.0f на 10 тыс. знаков" % r["similes"])
     if r["runs"]:
-        w.append("подряд 3+ фразы с одного слова: %d раз" % r["runs"])
+        w.append("подряд 3+ фразы с одного слова (%d): %s" % (len(r["runs"]), "; ".join(r["runs"][:5])))
     if r["over"]:
-        w.append("частые слова: " + ", ".join("%s×%d" % x for x in r["over"]))
+        w.append("частые слова: " + ", ".join(
+            "%s×%d (абз. %s)" % (x, c, ",".join(map(str, r["where"].get(x, [])))) for x, c in r["over"]))
     if r["cliche"]:
         w.append("штампы: " + "; ".join(sorted(set(r["cliche"]))))
     if r["kants"]:
