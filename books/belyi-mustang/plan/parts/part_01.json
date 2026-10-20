@@ -2,7 +2,7 @@
   "num": 1,
   "label": "Часть первая",
   "title": "Степь",
-  "synopsis": "Найм землемера, ранчо «Чёрный Ручей», легенда о белом мустанге, угрозы железнодорожного дельца.",
+  "synopsis": "Найм, Аустин, ранчо, Нелл и Диего, Текваи и легенда о Призраке, межевые книги, угрозы Бэка Уолтона, охота на табун.",
   "chapters": [
     {
       "num": 1,
@@ -51,6 +51,42 @@
     },
     {
       "num": 6,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 7,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 8,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 9,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 10,
       "title": "",
       "pov": "",
       "summary": "",

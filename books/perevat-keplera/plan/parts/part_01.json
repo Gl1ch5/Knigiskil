@@ -2,7 +2,7 @@
   "num": 1,
   "label": "Часть первая",
   "title": "Перевал",
-  "synopsis": "Корабль, Юрий и Саша, первая аномалия в системах и знание отца о рисках.",
+  "synopsis": "Испытание в прошлом, Луна, старт, быт корабля, первая аномалия, отказ Лоцмана открыть журналы.",
   "chapters": [
     {
       "num": 1,
@@ -51,6 +51,42 @@
     },
     {
       "num": 6,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 7,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 8,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 9,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 10,
       "title": "",
       "pov": "",
       "summary": "",
