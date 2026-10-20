@@ -5,6 +5,7 @@ import re
 import sys
 
 DEFAULT_PAGE_CHARS = 1800
+AUTHOR = "Павел М"  # постоянный псевдоним всех книг навыка
 CHAPTER_FILE_RE = re.compile(r"^c(\d{4,})(?:\.(\d+))?\.txt$")
 # крупный файл сразу на несколько глав: c0036-0040.txt, каждая глава начинается с "# Название"
 BLOCK_FILE_RE = re.compile(r"^c(\d{4,})-(\d{4,})(?:\.(\d+))?\.txt$")
@@ -64,6 +65,23 @@ def load_outline(book_dir):
 
 def page_chars(book):
     return int(book.get("page_chars") or DEFAULT_PAGE_CHARS)
+
+
+def scenes(ch):
+    """Сцены главы (поле scenes; в старых планах — beats)."""
+    return ch.get("scenes") or ch.get("beats") or []
+
+
+def chapter_title(ch, text=None):
+    """Название главы: из плана, иначе из строки '# …' в тексте."""
+    if ch.get("title"):
+        return ch["title"]
+    for line in (text or "").split("\n"):
+        if line.startswith("# "):
+            return line[2:].strip()
+        if line.strip():
+            break
+    return ""
 
 
 def chapter_id(num):
