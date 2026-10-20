@@ -5,6 +5,7 @@ import re
 import sys
 
 DEFAULT_PAGE_CHARS = 1800
+AUTHOR = "Павел М"  # постоянный псевдоним всех книг навыка
 CHAPTER_FILE_RE = re.compile(r"^c(\d{4,})(?:\.(\d+))?\.txt$")
 # крупный файл сразу на несколько глав: c0036-0040.txt, каждая глава начинается с "# Название"
 BLOCK_FILE_RE = re.compile(r"^c(\d{4,})-(\d{4,})(?:\.(\d+))?\.txt$")
@@ -66,6 +67,23 @@ def page_chars(book):
     return int(book.get("page_chars") or DEFAULT_PAGE_CHARS)
 
 
+def scenes(ch):
+    """Сцены главы (поле scenes; в старых планах — beats)."""
+    return ch.get("scenes") or ch.get("beats") or []
+
+
+def chapter_title(ch, text=None):
+    """Название главы: из плана, иначе из строки '# …' в тексте."""
+    if ch.get("title"):
+        return ch["title"]
+    for line in (text or "").split("\n"):
+        if line.startswith("# "):
+            return line[2:].strip()
+        if line.strip():
+            break
+    return ""
+
+
 def chapter_id(num):
     return "c%04d" % num
 
@@ -103,6 +121,19 @@ def split_block(text, first):
         if num >= first:
             out.setdefault(num, []).append(line)
     return {k: "\n".join(v) for k, v in out.items()}
+
+
+def block_of(book_dir):
+    """{номер главы: путь блок-файла cNNNN-MMMM.txt, где она лежит}."""
+    d = os.path.join(book_dir, "chapters")
+    out = {}
+    if os.path.isdir(d):
+        for name in sorted(os.listdir(d)):
+            m = BLOCK_FILE_RE.match(name)
+            if m:
+                for n in range(int(m.group(1)), int(m.group(2)) + 1):
+                    out.setdefault(n, os.path.join(d, name))
+    return out
 
 
 def chapter_texts(book_dir):

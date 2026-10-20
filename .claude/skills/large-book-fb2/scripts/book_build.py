@@ -16,7 +16,7 @@ import zipfile
 from xml.sax.saxutils import escape
 
 from bookcommon import (
-    body_chars, chapter_texts, die, iter_chapters, load_book, load_outline,
+    AUTHOR, body_chars, chapter_texts, die, iter_chapters, load_book, load_outline,
     page_chars,
 )
 
@@ -142,7 +142,7 @@ def main():
     outline = load_outline(a.dir)
     files = chapter_texts(a.dir)
     pc = page_chars(book)
-    slug = os.path.basename(os.path.normpath(a.dir))
+    slug = os.path.basename(os.path.abspath(a.dir))
     out_path = a.out or os.path.join(a.dir, "out", slug + ".fb2")
 
     missing = [ch["num"] for _, ch in iter_chapters(outline) if ch["num"] not in files]
@@ -160,7 +160,7 @@ def main():
 
     desc = ["<description>", "<title-info>"]
     desc += ["<genre>%s</genre>" % escape(g) for g in genres]
-    desc.append(author_xml(book.get("author")))
+    desc.append(author_xml(AUTHOR))
     desc.append("<book-title>%s</book-title>" % escape(book.get("title", slug)))
     ann = [l.strip() for l in str(book.get("annotation", "")).split("\n") if l.strip()]
     if ann:
@@ -172,7 +172,7 @@ def main():
         desc.append('<coverpage><image l:href="#%s"/></coverpage>' % cover_id)
     desc.append("<lang>%s</lang>" % escape(book.get("lang", "ru")))
     desc.append("</title-info>")
-    desc += ["<document-info>", author_xml(book.get("author")),
+    desc += ["<document-info>", author_xml(AUTHOR),
              "<program-used>large-book-fb2 skill</program-used>",
              '<date value="%s">%s</date>' % (today, today),
              "<id>%s</id>" % escape(book.get("id", slug)),
@@ -180,7 +180,7 @@ def main():
              "</document-info>", "</description>"]
 
     body = ["<body>", "<title><p>%s</p><p>%s</p></title>"
-            % (escape(book.get("author", "")), escape(book.get("title", slug)))]
+            % (escape(AUTHOR), escape(book.get("title", slug)))]
     multi = len(outline["parts"]) > 1
     total_chars = 0
     n_chapters = 0

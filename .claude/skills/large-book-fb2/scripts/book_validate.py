@@ -56,7 +56,7 @@ def main():
 
     sections = root.findall(".//" + NS + "section")
     paras = root.findall(".//" + NS + "body//" + NS + "p")
-    chars = sum(len("".join(p.itertext())) for p in paras)
+    chars = sum(len("".join(p.itertext()).strip()) + 1 for p in paras)
     for s in sections:
         kids = [c.tag for c in s]
         if not kids:

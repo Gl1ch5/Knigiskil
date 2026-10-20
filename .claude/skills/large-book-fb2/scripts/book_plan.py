@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
-"""План большой книги: каркас частей и глав, задания-пакеты для субагентов, просмотр.
+"""План книги: каркас частей и глав, задание на следующую главу, просмотр.
 
-  book_plan.py skeleton <dir> --parts 8 --chapter-pages 10 [--pages N] [--force]
-  book_plan.py batches  <dir> --size 5 [--only-missing]
+  book_plan.py skeleton <dir> [--pages N] [--chapters N] [--parts N] [--force]
+  book_plan.py next     <dir> [--chapter N]
   book_plan.py show     <dir> [--no-spoilers] [--part N]
   book_plan.py check    <dir>
-  book_plan.py trim     <dir> --chapters 45 --parts 1-20,21-36,37-45
+  book_plan.py trim     <dir> --chapters 20 --parts 1-7,8-14,15-20
 
-trim сокращает план до N глав (книга короче, чем задумано) и при желании
-заново раскладывает главы по частям: диапазоны через запятую, по одному на часть.
+skeleton сам выбирает число частей и глав по объёму книги (layout), чтобы
+главы были полноценными эпизодами, а не мелкими кусками. --chapters/--parts
+задают их вручную.
 
-План хранится в plan/parts/part_NN.json — по файлу на часть, поэтому разные
-субагенты могут заполнять разные части одновременно.
+next печатает задание на первую ненаписанную главу: её план, место в
+структуре, конспекты предыдущих глав и следующую главу.
+
+trim сокращает план до N глав и при желании заново раскладывает главы по
+частям: диапазоны через запятую, по одному на часть.
 """
 import argparse
 import math
 import os
+import re
 import shutil
 
 from bookcommon import (
-    chapter_texts, chapter_id, die, iter_chapters, load_book, load_json,
-    load_outline, page_chars, part_path, parts_dir, save_json,
+    AUTHOR, block_of, body_chars, chapter_files, chapter_texts, chapter_id, chapter_title, die,
+    iter_chapters, load_book, load_outline, page_chars, part_path, parts_dir,
+    save_json, scenes,
 )
 
 ORDINALS = ["первая", "вторая", "третья", "четвёртая", "пятая", "шестая", "седьмая",
             "восьмая", "девятая", "десятая", "одиннадцатая", "двенадцатая"]
+
+WRITE_CHARS = 70000  # знаков в одной записи: ~35k токенов, запас до лимита вывода ~40k
+
+# ключевые точки структуры: доля объёма → роль главы (references/craft.md)
+KEY_POINTS = [(0.0, "крючок и завязка"), (0.10, "событие-катализатор"),
+              (0.25, "точка невозврата"), (0.50, "середина: переворот"),
+              (0.75, "всё потеряно"), (0.90, "кульминация")]
 
 
 def part_label(num):
@@ -33,9 +46,24 @@ def part_label(num):
     return "Часть %d" % num
 
 
+def layout(pages):
+    """(частей, глав) для объёма: глава — полноценный эпизод на 12–28 страниц."""
+    if pages <= 150:
+        cp, parts = 10, 1
+    elif pages <= 400:
+        cp, parts = 18, 2 if pages < 250 else 3
+    elif pages <= 800:
+        cp, parts = 22, 3 if pages < 600 else 4
+    elif pages <= 2000:
+        cp, parts = 25, min(6, max(4, math.ceil(pages / 350)))
+    else:
+        cp, parts = 28, math.ceil(pages / 500)
+    return parts, max(4, round(pages / cp))
+
+
 def cmd_skeleton(a):
     book = load_book(a.dir)
-    pages = a.pages or int(book.get("target_pages") or 1000)
+    pages = a.pages or int(book.get("target_pages") or 500)
     d = parts_dir(a.dir)
     if os.path.isdir(d) and os.listdir(d) and not a.force:
         die("план уже есть в %s (используй --force, чтобы пересоздать)" % d)
@@ -43,10 +71,16 @@ def cmd_skeleton(a):
         shutil.rmtree(d)
     os.makedirs(d)
 
-    n_ch = max(1, math.ceil(pages / a.chapter_pages))
-    n_parts = max(1, min(a.parts, n_ch))
+    auto_parts, auto_ch = layout(pages)
+    n_ch = a.chapters or auto_ch
+    n_parts = max(1, min(a.parts or auto_parts, n_ch))
     base, extra = divmod(n_ch, n_parts)
     per_ch = pages / n_ch
+    # роль главы по ключевым точкам: глава, на которую приходится доля объёма
+    roles = {}
+    for share, role in KEY_POINTS + [(1.0, "развязка")]:
+        k = min(n_ch, int(share * n_ch) + 1)
+        roles[k] = roles[k] + " + " + role if k in roles else role
     num = 1
     for p in range(1, n_parts + 1):
         count = base + (1 if p <= extra else 0)
@@ -56,8 +90,9 @@ def cmd_skeleton(a):
                 "num": num,
                 "title": "",
                 "pov": "",
+                "function": roles.get(num, ""),
                 "summary": "",
-                "beats": [],
+                "scenes": [],
                 "ends_with": "",
                 "target_pages": round(per_ch, 1),
             })
@@ -73,18 +108,19 @@ def cmd_skeleton(a):
     save_json(os.path.join(a.dir, "book.json"), book)
     print("Каркас: частей %d, глав %d по ~%.1f стр. (~%d знаков) → %s"
           % (n_parts, n_ch, per_ch, per_ch * page_chars(book), d))
-    print("Теперь заполни в каждой главе: title, pov, summary, beats, ends_with.")
+    print("Ключевые точки: " + ", ".join("гл. %d — %s" % (k, v) for k, v in sorted(roles.items())))
+    print("Теперь заполни в каждой главе: title, pov, function, summary, scenes, ends_with.")
 
 
 def problems(outline):
     out = []
     for part, ch in iter_chapters(outline):
         miss = [k for k in ("title", "summary") if not str(ch.get(k, "")).strip()]
-        if not ch.get("beats"):
-            miss.append("beats")
+        if not scenes(ch):
+            miss.append("scenes")
         if miss:
             out.append("глава %d (часть %d): нет %s" % (ch["num"], part["num"], ", ".join(miss)))
-    for part in outline["parts"]:
+    for part in outline["parts"] if len(outline["parts"]) > 1 else []:
         if not str(part.get("title", "")).strip():
             out.append("часть %d: нет title" % part["num"])
     return out
@@ -113,106 +149,157 @@ def cmd_show(a):
             print("   " + part["synopsis"])
         for ch in part["chapters"]:
             total_pages += ch.get("target_pages", 0)
-            print("  %4d. %s  [%s стр.]" % (ch["num"], ch.get("title") or "—", ch.get("target_pages")))
+            role = "  (%s)" % ch["function"] if spoilers and ch.get("function") else ""
+            print("  %4d. %s  [%s стр.]%s" % (ch["num"], ch.get("title") or "—", ch.get("target_pages"), role))
             if spoilers:
                 if ch.get("summary"):
                     print("        " + ch["summary"])
-                for b in ch.get("beats", []):
+                for b in scenes(ch):
                     print("        • " + b)
     print("\nИтого по плану: %.0f стр. (цель книги %s)" % (total_pages, book.get("target_pages")))
 
 
-def neighbour_info(chapters_flat, idx, book_dir):
-    lines = []
-    if idx > 0:
-        prev = chapters_flat[idx - 1][1]
-        sp = os.path.join(book_dir, "plan", "summaries", chapter_id(prev["num"]) + ".md")
-        lines.append("- Предыдущая глава %d «%s»: %s" % (prev["num"], prev.get("title", ""), prev.get("summary", "")))
-        lines.append("  (если существует `%s` — прочитай, там что реально написано)" % sp)
-    return lines
+SUMMARY_RE = re.compile(r"^c(\d{4,})(?:-(\d{4,}))?\.md$")
 
 
-def render_chapter(ch, part, pc):
-    target = int(ch.get("target_pages", 10) * pc)
-    out = ["### Глава %d. %s" % (ch["num"], ch.get("title", "")),
-           "- Файл: `chapters/%s.txt` (+ `%s.2.txt`, `%s.3.txt` … для продолжения)"
-           % (chapter_id(ch["num"]), chapter_id(ch["num"]), chapter_id(ch["num"])),
-           "- Краткое содержание: `plan/summaries/%s.md`" % chapter_id(ch["num"]),
-           "- Объём: **не меньше %d знаков** (~%s стр.)" % (target, ch.get("target_pages")),
-           "- Часть: %s. %s" % (part.get("label") or part_label(part["num"]), part.get("title", ""))]
-    if ch.get("pov"):
-        out.append("- Точка зрения: %s" % ch["pov"])
-    out.append("- Содержание: %s" % ch.get("summary", ""))
-    if ch.get("beats"):
-        out.append("- Сцены по порядку:")
-        out += ["  %d. %s" % (i + 1, b) for i, b in enumerate(ch["beats"])]
-    if ch.get("ends_with"):
-        out.append("- Концовка главы: %s" % ch["ends_with"])
-    return "\n".join(out)
+def summaries(book_dir):
+    """{номер главы: путь к конспекту}; конспект на блок глав относится ко всем его главам."""
+    d = os.path.join(book_dir, "plan", "summaries")
+    out = {}
+    if os.path.isdir(d):
+        for name in sorted(os.listdir(d)):
+            m = SUMMARY_RE.match(name)
+            if m:
+                lo = int(m.group(1))
+                for n in range(lo, int(m.group(2) or lo) + 1):
+                    out[n] = os.path.join(d, name)
+    return out
 
 
-WRITER_RULES = """## Правила записи
-
-1. Перед работой прочитай `bible.md` целиком (стиль, персонажи, глоссарий) и описание своей части в `plan/parts/part_{part:02d}.json`.
-2. Пиши главы строго по порядку. Каждую главу — **кусками по 5–8 тыс. знаков**: первый кусок в `chapters/cNNNN.txt`, следующие в `chapters/cNNNN.2.txt`, `cNNNN.3.txt` и т. д., пока не наберёшь объём. Не переписывай уже сохранённые куски.
-3. Формат: первая строка первого куска — `# Название главы` (без слова «Глава» и номера). Дальше **каждый абзац — одна строка**. Разрыв сцены — строка `* * *`. Эпиграф (по желанию) — строки `> …` сразу после заголовка, автор эпиграфа — `> — Имя`. Курсив `*так*`. Диалоги — с новой строки через тире «— ».
-4. Пиши художественный текст полностью: сцены, диалоги, описания, мысли героев. Никаких пересказов «далее произошло…», никаких пометок, комментариев, markdown-заголовков внутри текста.
-5. Сохраняй имена и факты из `bible.md`. Не раскрывай тайны раньше главы, указанной в библии. Не заканчивай книгу — веди к следующей главе.
-6. После каждой главы создай `plan/summaries/cNNNN.md`: 5–10 строк — что произошло, где герои в конце, что они узнали, новые персонажи/предметы.
-7. Проверь объём: `python3 {scripts}/book_status.py {dir} --from {first} --to {last}`. Если глава короче цели — допиши следующий кусок.
-8. Пользователю текст не пересказывай. В конце ответь одной строкой: какие главы готовы и их объём в знаках.
-"""
+def read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read().strip()
 
 
-def cmd_batches(a):
+def cmd_next(a):
     book = load_book(a.dir)
     outline = load_outline(a.dir)
     pc = page_chars(book)
-    bdir = os.path.join(a.dir, "plan", "batches")
-    os.makedirs(bdir, exist_ok=True)
-    for name in os.listdir(bdir):
-        if name.startswith("batch_") and name.endswith(".md"):
-            os.remove(os.path.join(bdir, name))
-
     flat = list(iter_chapters(outline))
-    files = chapter_texts(a.dir) if a.only_missing else {}
-    scripts = os.path.dirname(os.path.abspath(__file__))
+    texts = chapter_texts(a.dir)
+    files = chapter_files(a.dir)
 
-    groups, cur = [], []
-    for idx, (part, ch) in enumerate(flat):
-        if a.only_missing and ch["num"] in files:
-            continue
-        if cur and (len(cur) >= a.size or cur[-1][1] != part["num"]):
-            groups.append(cur)
-            cur = []
-        cur.append((idx, part["num"], part, ch))
-    if cur:
-        groups.append(cur)
+    def written(ch):
+        return body_chars(texts[ch["num"]]) if ch["num"] in texts else 0
 
-    for bi, group in enumerate(groups, 1):
-        first, last = group[0][3]["num"], group[-1][3]["num"]
-        part = group[0][2]
-        text = ["# Пакет %03d: главы %d–%d" % (bi, first, last), "",
-                "Книга: «%s», автор: %s. Стиль: %s." % (book.get("title"), book.get("author"), book.get("style") or "см. bible.md"),
-                "Папка книги: `%s` (все пути ниже — относительно неё)." % os.path.abspath(a.dir), "",
-                "## Контекст"]
-        text += neighbour_info(flat, group[0][0], a.dir) or ["- Это начало книги."]
-        if part.get("synopsis"):
-            text.append("- Синопсис части: %s" % part["synopsis"])
-        nxt = group[-1][0] + 1
-        if nxt < len(flat):
-            n = flat[nxt][1]
-            text.append("- Следующая глава %d «%s» (её пишет другой агент): %s" % (n["num"], n.get("title", ""), n.get("summary", "")))
-        text += ["", "## Главы"]
-        for _, _, p, ch in group:
-            text += ["", render_chapter(ch, p, pc)]
-        text += ["", WRITER_RULES.format(part=part["num"], scripts=scripts, dir=os.path.abspath(a.dir),
-                                         first=first, last=last)]
-        with open(os.path.join(bdir, "batch_%03d.md" % bi), "w", encoding="utf-8") as f:
-            f.write("\n".join(text))
-    print("Создано пакетов: %d в %s" % (len(groups), bdir))
-    for bi, group in enumerate(groups, 1):
-        print("  batch_%03d.md: главы %d–%d" % (bi, group[0][3]["num"], group[-1][3]["num"]))
+    def target(ch):
+        return int(ch.get("target_pages", 10) * pc)
+
+    if a.chapter:
+        idx = next((i for i, (_, ch) in enumerate(flat) if ch["num"] == a.chapter), None)
+        if idx is None:
+            die("нет главы %d в плане" % a.chapter)
+    else:
+        idx = next((i for i, (_, ch) in enumerate(flat) if written(ch) < target(ch) * a.threshold), None)
+        if idx is None:
+            print("Все главы написаны. Дальше: book_lint.py, book_build.py --zip, book_validate.py")
+            return 0
+    part, ch = flat[idx]
+    done = written(ch)
+    total_target = sum(target(c) for _, c in flat)
+    before = sum(target(c) for _, c in flat[:idx])
+    # одна запись Write — до WRITE_CHARS знаков: короткие ненаписанные главы берём блоком
+    group = [idx]
+    if not done:
+        cum = target(ch)
+        j = idx + 1
+        while (len(group) < 4 and j < len(flat) and not written(flat[j][1])
+               and flat[j][0]["num"] == part["num"] and cum + target(flat[j][1]) <= WRITE_CHARS):
+            cum += target(flat[j][1])
+            group.append(j)
+            j += 1
+    n, cid = ch["num"], chapter_id(ch["num"])
+    last_n = flat[group[-1]][1]["num"]
+    pieces = files.get(n, [])
+    block = block_of(a.dir).get(n)
+    if block and done:
+        nxt_file = "%s — допиши недостающие сцены внутрь главы %d через Edit (не создавай отдельный файл)" % (
+            os.path.basename(block), n)
+    elif len(group) > 1:
+        nxt_file = "%s-%04d.txt (главы %d–%d одним Write, каждая со своей строкой «# Название»)" % (
+            cid, last_n, n, last_n)
+    elif pieces:
+        nxt_file = "%s.%d.txt (продолжение)" % (cid, len(pieces) + 1)
+    else:
+        nxt_file = "%s.txt (вся глава одним Write)" % cid
+    need = sum(target(flat[g][1]) for g in group)
+
+    head = "# Глава %d из %d" % (n, len(flat)) if len(group) == 1 else "# Главы %d–%d из %d" % (n, last_n, len(flat))
+    out = [head,
+           "Книга «%s», %s. Позиция: %.0f%% книги.%s"
+           % (book.get("title"), AUTHOR, 100.0 * before / max(total_target, 1),
+              " %s. %s" % (part.get("label") or part_label(part["num"]), part.get("title", ""))
+              if len(outline["parts"]) > 1 else "")]
+    if part.get("synopsis"):
+        out.append("Синопсис части: %s" % part["synopsis"])
+    for g in group:
+        gch = flat[g][1]
+        out += ["", "## План главы %d: %s" % (gch["num"], chapter_title(gch, texts.get(gch["num"])) or "—")]
+        if gch.get("function"):
+            out.append("Роль в структуре: %s" % gch["function"])
+        if gch.get("pov"):
+            out.append("Точка зрения: %s" % gch["pov"])
+        out.append("Содержание: %s" % (gch.get("summary") or "—"))
+        sc = scenes(gch)
+        if sc:
+            out.append("Сцены:")
+            out += ["  %d. %s" % (i + 1, b) for i, b in enumerate(sc)]
+        if gch.get("ends_with"):
+            out.append("Концовка (крючок): %s" % gch["ends_with"])
+        out.append("Объём главы: не меньше %d знаков (~%s стр.)" % (target(gch), gch.get("target_pages")))
+    out += ["", "Написано: %d из %d знаков, не хватает %d. Записать в: chapters/%s"
+            % (done, need, max(0, need - done), nxt_file),
+            "Пиши с запасом ~110%% от цели каждой главы: при записи текст обычно выходит короче задуманного. "
+            "Сразу после записи: book_status.py %s --from %d --to %d." % (a.dir, n, last_n)]
+
+    sums = summaries(a.dir)
+    prev = []
+    seen = set()
+    for _, pch in reversed(flat[:idx]):
+        path = sums.get(pch["num"])
+        if path and path not in seen:
+            seen.add(path)
+            m = SUMMARY_RE.match(os.path.basename(path))
+            label = dict(pch, num="%s–%s" % (int(m.group(1)), int(m.group(2)))) if m.group(2) else pch
+            text = read_text(path)
+            if m.group(2):  # конспект блока: последние абзацы важнее
+                text = "\n".join(text.split("\n\n")[-2:])
+            prev.append((label, text))
+        elif not path:
+            prev.append((pch, pch.get("summary") or "—"))
+        if len(prev) >= a.prev:
+            break
+    if prev:
+        out += ["", "## Что было раньше (конспекты)"]
+        prev = list(reversed(prev))
+        for k, (pch, text) in enumerate(prev):
+            text = " ".join(text.split())
+            if k < len(prev) - 1 and len(text) > 400:  # полностью — только последний конспект
+                text = text[:400].rsplit(" ", 1)[0] + " …"
+            if isinstance(pch["num"], int):
+                out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])), text))
+            else:
+                out.append("— Главы %s: %s" % (pch["num"], text))
+    if group[-1] + 1 < len(flat):
+        nch = flat[group[-1] + 1][1]
+        out += ["", "## Следующая глава %d «%s»" % (nch["num"], nch.get("title", "")),
+                nch.get("summary") or "—", "Подведи к ней, но не забегай вперёд."]
+    else:
+        out += ["", "## Это последняя глава: кульминация/развязка, ответ на главный вопрос книги."]
+    out += ["", "После записи: book_lint.py %s --from %d --to %d, чек-лист craft.md, конспект plan/summaries/%s.md"
+            % (a.dir, n, last_n, cid if len(group) == 1 else "%s-%04d" % (cid, last_n))]
+    print("\n".join(out))
+    return 0
 
 
 def cmd_trim(a):
@@ -236,10 +323,10 @@ def cmd_trim(a):
     os.makedirs(parts_dir(a.dir))
     for i, (lo, hi) in enumerate(ranges, 1):
         part = dict(old.get(i, {"num": i, "label": part_label(i), "title": "", "synopsis": ""}))
-        part["chapters"] = [by_num.get(n, {"num": n, "title": "", "pov": "", "summary": "", "beats": [],
-                                           "ends_with": "", "target_pages": 10}) for n in range(lo, hi + 1)]
+        part["chapters"] = [by_num.get(n, {"num": n, "title": "", "pov": "", "function": "", "summary": "",
+                                           "scenes": [], "ends_with": "", "target_pages": 20}) for n in range(lo, hi + 1)]
         save_json(part_path(a.dir, i), part)
-    book["target_pages"] = int(sum(ch.get("target_pages", 10) for ch in by_num.values()))
+    book["target_pages"] = int(sum(ch.get("target_pages", 20) for ch in by_num.values()))
     save_json(os.path.join(a.dir, "book.json"), book)
     print("План: %d глав, частей %d, цель %d стр." % (a.chapters, len(ranges), book["target_pages"]))
 
@@ -249,14 +336,15 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("skeleton")
     s.add_argument("dir")
-    s.add_argument("--parts", type=int, default=8)
-    s.add_argument("--chapter-pages", type=float, default=10)
-    s.add_argument("--pages", type=int)
+    s.add_argument("--pages", type=int, help="объём (по умолчанию из book.json)")
+    s.add_argument("--chapters", type=int, help="число глав (по умолчанию — по объёму)")
+    s.add_argument("--parts", type=int, help="число частей (по умолчанию — по объёму)")
     s.add_argument("--force", action="store_true")
-    s = sub.add_parser("batches")
+    s = sub.add_parser("next")
     s.add_argument("dir")
-    s.add_argument("--size", type=int, default=5)
-    s.add_argument("--only-missing", action="store_true", help="только главы без файлов")
+    s.add_argument("--chapter", type=int, help="задание на конкретную главу")
+    s.add_argument("--prev", type=int, default=3, help="сколько прошлых конспектов показать")
+    s.add_argument("--threshold", type=float, default=0.9, help="глава считается написанной от этой доли цели")
     s = sub.add_parser("show")
     s.add_argument("dir")
     s.add_argument("--no-spoilers", action="store_true")
@@ -268,7 +356,7 @@ def main():
     s.add_argument("--chapters", type=int, required=True)
     s.add_argument("--parts", help="например 1-20,21-36,37-45")
     a = ap.parse_args()
-    rc = {"skeleton": cmd_skeleton, "batches": cmd_batches, "show": cmd_show, "check": cmd_check,
+    rc = {"skeleton": cmd_skeleton, "next": cmd_next, "show": cmd_show, "check": cmd_check,
           "trim": cmd_trim}[a.cmd](a)
     raise SystemExit(rc or 0)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Прогресс книги: страницы по главам и частям, пустые и короткие главы.
 
-  book_status.py <dir> [--short] [--from N] [--to M] [--threshold 0.7]
+  book_status.py <dir> [--short] [--from N] [--to M] [--threshold 0.9]
 """
 import argparse
 
@@ -17,7 +17,7 @@ def main():
     ap.add_argument("--short", action="store_true", help="показать только пустые/короткие главы")
     ap.add_argument("--from", dest="first", type=int, default=0)
     ap.add_argument("--to", dest="last", type=int, default=10 ** 9)
-    ap.add_argument("--threshold", type=float, default=0.7, help="доля цели, ниже которой глава короткая")
+    ap.add_argument("--threshold", type=float, default=0.9, help="доля цели, ниже которой глава короткая")
     a = ap.parse_args()
 
     book = load_book(a.dir)
