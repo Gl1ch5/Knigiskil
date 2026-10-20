@@ -142,7 +142,7 @@ def main():
     outline = load_outline(a.dir)
     files = chapter_texts(a.dir)
     pc = page_chars(book)
-    slug = os.path.basename(os.path.normpath(a.dir))
+    slug = os.path.basename(os.path.abspath(a.dir))
     out_path = a.out or os.path.join(a.dir, "out", slug + ".fb2")
 
     missing = [ch["num"] for _, ch in iter_chapters(outline) if ch["num"] not in files]

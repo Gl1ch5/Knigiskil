@@ -62,7 +62,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dir", help="папка проекта книги")
     ap.add_argument("--title", required=True)
-    ap.add_argument("--pages", type=int, default=4000, help="целевой объём в страницах")
+    ap.add_argument("--pages", type=int, required=True, help="целевой объём в страницах")
     ap.add_argument("--page-chars", type=int, default=DEFAULT_PAGE_CHARS, help="знаков на страницу")
     ap.add_argument("--genre", action="append", help="код жанра FB2, можно несколько раз")
     ap.add_argument("--style", default="", help="образец стиля, например 'Александр Дюма'")

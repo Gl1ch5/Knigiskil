@@ -24,7 +24,7 @@ import re
 import shutil
 
 from bookcommon import (
-    AUTHOR, body_chars, chapter_files, chapter_texts, chapter_id, chapter_title, die,
+    AUTHOR, block_of, body_chars, chapter_files, chapter_texts, chapter_id, chapter_title, die,
     iter_chapters, load_book, load_outline, page_chars, part_path, parts_dir,
     save_json, scenes,
 )
@@ -32,7 +32,7 @@ from bookcommon import (
 ORDINALS = ["первая", "вторая", "третья", "четвёртая", "пятая", "шестая", "седьмая",
             "восьмая", "девятая", "десятая", "одиннадцатая", "двенадцатая"]
 
-WRITE_CHARS = 80000  # знаков в одной записи: ~35k токенов, запас до лимита вывода ~40k
+WRITE_CHARS = 70000  # знаков в одной записи: ~35k токенов, запас до лимита вывода ~40k
 
 # ключевые точки структуры: доля объёма → роль главы (references/craft.md)
 KEY_POINTS = [(0.0, "крючок и завязка"), (0.10, "событие-катализатор"),
@@ -221,7 +221,11 @@ def cmd_next(a):
     n, cid = ch["num"], chapter_id(ch["num"])
     last_n = flat[group[-1]][1]["num"]
     pieces = files.get(n, [])
-    if len(group) > 1:
+    block = block_of(a.dir).get(n)
+    if block and done:
+        nxt_file = "%s — допиши недостающие сцены внутрь главы %d через Edit (не создавай отдельный файл)" % (
+            os.path.basename(block), n)
+    elif len(group) > 1:
         nxt_file = "%s-%04d.txt (главы %d–%d одним Write, каждая со своей строкой «# Название»)" % (
             cid, last_n, n, last_n)
     elif pieces:
@@ -232,9 +236,10 @@ def cmd_next(a):
 
     head = "# Глава %d из %d" % (n, len(flat)) if len(group) == 1 else "# Главы %d–%d из %d" % (n, last_n, len(flat))
     out = [head,
-           "Книга «%s», %s. Позиция: %.0f%% книги. %s. %s"
+           "Книга «%s», %s. Позиция: %.0f%% книги.%s"
            % (book.get("title"), AUTHOR, 100.0 * before / max(total_target, 1),
-              part.get("label") or part_label(part["num"]), part.get("title", ""))]
+              " %s. %s" % (part.get("label") or part_label(part["num"]), part.get("title", ""))
+              if len(outline["parts"]) > 1 else "")]
     if part.get("synopsis"):
         out.append("Синопсис части: %s" % part["synopsis"])
     for g in group:
@@ -253,7 +258,9 @@ def cmd_next(a):
             out.append("Концовка (крючок): %s" % gch["ends_with"])
         out.append("Объём главы: не меньше %d знаков (~%s стр.)" % (target(gch), gch.get("target_pages")))
     out += ["", "Написано: %d из %d знаков, не хватает %d. Записать в: chapters/%s"
-            % (done, need, max(0, need - done), nxt_file)]
+            % (done, need, max(0, need - done), nxt_file),
+            "Пиши с запасом ~110%% от цели каждой главы: при записи текст обычно выходит короче задуманного. "
+            "Сразу после записи: book_status.py %s --from %d --to %d." % (a.dir, n, last_n)]
 
     sums = summaries(a.dir)
     prev = []
@@ -262,7 +269,12 @@ def cmd_next(a):
         path = sums.get(pch["num"])
         if path and path not in seen:
             seen.add(path)
-            prev.append((pch, read_text(path)))
+            m = SUMMARY_RE.match(os.path.basename(path))
+            label = dict(pch, num="%s–%s" % (int(m.group(1)), int(m.group(2)))) if m.group(2) else pch
+            text = read_text(path)
+            if m.group(2):  # конспект блока: последние абзацы важнее
+                text = "\n".join(text.split("\n\n")[-2:])
+            prev.append((label, text))
         elif not path:
             prev.append((pch, pch.get("summary") or "—"))
         if len(prev) >= a.prev:
@@ -274,7 +286,10 @@ def cmd_next(a):
             text = " ".join(text.split())
             if k < len(prev) - 1 and len(text) > 400:  # полностью — только последний конспект
                 text = text[:400].rsplit(" ", 1)[0] + " …"
-            out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])), text))
+            if isinstance(pch["num"], int):
+                out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])), text))
+            else:
+                out.append("— Главы %s: %s" % (pch["num"], text))
     if group[-1] + 1 < len(flat):
         nch = flat[group[-1] + 1][1]
         out += ["", "## Следующая глава %d «%s»" % (nch["num"], nch.get("title", "")),
@@ -329,7 +344,7 @@ def main():
     s.add_argument("dir")
     s.add_argument("--chapter", type=int, help="задание на конкретную главу")
     s.add_argument("--prev", type=int, default=3, help="сколько прошлых конспектов показать")
-    s.add_argument("--threshold", type=float, default=0.7, help="глава считается написанной от этой доли цели")
+    s.add_argument("--threshold", type=float, default=0.9, help="глава считается написанной от этой доли цели")
     s = sub.add_parser("show")
     s.add_argument("dir")
     s.add_argument("--no-spoilers", action="store_true")

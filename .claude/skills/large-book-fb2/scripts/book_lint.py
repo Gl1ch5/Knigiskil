@@ -40,7 +40,7 @@ def sentences(text):
     return [s.strip() for s in SENT_RE.findall(text) if WORD_RE.search(s)]
 
 
-def analyze(text):
+def analyze(text, ignore=()):
     lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("# ")]
     prose = [l for l in lines if l not in ("* * *", "***") and not l.startswith(">")]
     body = "\n".join(prose)
@@ -53,7 +53,7 @@ def analyze(text):
     caps = set(w.lower() for w in re.findall(r"(?<![.!?…—]\s)\b[А-ЯЁ][а-яё]+", body))
     freq = Counter(w for w in words if len(w) >= 5 and w not in STOP and w not in caps)
     per10k = 10000.0 / chars
-    over = [(w, c) for w, c in freq.most_common(15) if c * per10k >= 6 and c >= 6]
+    over = [(w, c) for w, c in freq.most_common(15) if c * per10k >= 6 and c >= 6 and w not in ignore]
     # 3+ фразы подряд с одного слова — только в повествовании (в репликах это часто намеренная анафора)
     runs = []
     for pi, l in enumerate(prose, 1):
@@ -62,7 +62,7 @@ def analyze(text):
         ss = sentences(l)
         st = [(WORD_RE.findall(x) or [""])[0].lower() for x in ss]
         for i in range(2, len(st)):
-            if st[i] and st[i] == st[i - 1] == st[i - 2]:
+            if st[i] and st[i] not in ignore and st[i] == st[i - 1] == st[i - 2]:
                 runs.append("абз. %d: «%s…»" % (pi, ss[i - 2][:40]))
                 break
     where = {}
@@ -134,13 +134,15 @@ def main():
     book = load_book(a.dir)
     pc = page_chars(book)
     texts = chapter_texts(a.dir)
+    # слова, которые не считать повтором: имена, словечки персонажей, намеренная анафора
+    ignore = set(w.lower() for w in book.get("lint_ignore", []))
     total_warn = 0
     rows = 0
     for _, ch in iter_chapters(load_outline(a.dir)):
         n = ch["num"]
         if not (a.first <= n <= a.last) or n not in texts:
             continue
-        r = analyze(texts[n])
+        r = analyze(texts[n], ignore)
         target = int(ch.get("target_pages", 10) * pc)
         title = chapter_title(ch, texts[n]) or "—"
         w = warnings(r, target)

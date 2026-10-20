@@ -123,6 +123,19 @@ def split_block(text, first):
     return {k: "\n".join(v) for k, v in out.items()}
 
 
+def block_of(book_dir):
+    """{номер главы: путь блок-файла cNNNN-MMMM.txt, где она лежит}."""
+    d = os.path.join(book_dir, "chapters")
+    out = {}
+    if os.path.isdir(d):
+        for name in sorted(os.listdir(d)):
+            m = BLOCK_FILE_RE.match(name)
+            if m:
+                for n in range(int(m.group(1)), int(m.group(2)) + 1):
+                    out.setdefault(n, os.path.join(d, name))
+    return out
+
+
 def chapter_texts(book_dir):
     """{номер главы: полный текст} из одиночных файлов и крупных блоков."""
     texts = {n: read_chapter_text(p) for n, p in chapter_files(book_dir).items()}
