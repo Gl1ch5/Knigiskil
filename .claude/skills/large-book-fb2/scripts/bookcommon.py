@@ -6,6 +6,8 @@ import sys
 
 DEFAULT_PAGE_CHARS = 1800
 CHAPTER_FILE_RE = re.compile(r"^c(\d{4,})(?:\.(\d+))?\.txt$")
+# крупный файл сразу на несколько глав: c0036-0040.txt, каждая глава начинается с "# Название"
+BLOCK_FILE_RE = re.compile(r"^c(\d{4,})-(\d{4,})(?:\.(\d+))?\.txt$")
 
 
 def die(msg):
@@ -89,6 +91,35 @@ def chapter_files(book_dir):
         piece = int(m.group(2) or 1)
         result.setdefault(num, []).append((piece, os.path.join(d, name)))
     return {k: [p for _, p in sorted(v)] for k, v in result.items()}
+
+
+def split_block(text, first):
+    """Делит текст крупного файла на главы по строкам '# …' → {номер: текст}."""
+    out = {}
+    num = first - 1
+    for line in text.split("\n"):
+        if line.startswith("# "):
+            num += 1
+        if num >= first:
+            out.setdefault(num, []).append(line)
+    return {k: "\n".join(v) for k, v in out.items()}
+
+
+def chapter_texts(book_dir):
+    """{номер главы: полный текст} из одиночных файлов и крупных блоков."""
+    texts = {n: read_chapter_text(p) for n, p in chapter_files(book_dir).items()}
+    d = os.path.join(book_dir, "chapters")
+    if not os.path.isdir(d):
+        return texts
+    blocks = []
+    for name in os.listdir(d):
+        m = BLOCK_FILE_RE.match(name)
+        if m:
+            blocks.append((int(m.group(1)), int(m.group(3) or 1), os.path.join(d, name)))
+    for first, piece, path in sorted(blocks):
+        for num, text in split_block(read_chapter_text([path]), first).items():
+            texts[num] = texts[num] + "\n" + text if num in texts else text
+    return texts
 
 
 def read_chapter_text(paths):

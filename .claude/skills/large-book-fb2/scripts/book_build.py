@@ -16,8 +16,8 @@ import zipfile
 from xml.sax.saxutils import escape
 
 from bookcommon import (
-    body_chars, chapter_files, die, iter_chapters, load_book, load_outline,
-    page_chars, read_chapter_text,
+    body_chars, chapter_texts, die, iter_chapters, load_book, load_outline,
+    page_chars,
 )
 
 SCENE_BREAK_RE = re.compile(r"^(\*\s*){3}$|^(-\s*){3,}$|^#{1,6}\s*$")
@@ -140,7 +140,7 @@ def main():
 
     book = load_book(a.dir)
     outline = load_outline(a.dir)
-    files = chapter_files(a.dir)
+    files = chapter_texts(a.dir)
     pc = page_chars(book)
     slug = os.path.basename(os.path.normpath(a.dir))
     out_path = a.out or os.path.join(a.dir, "out", slug + ".fb2")
@@ -194,7 +194,7 @@ def main():
                 t += "<p>%s</p>" % escape(part["title"])
             body += ["<section>", t + "</title>"]
         for ch in written:
-            text = read_chapter_text(files[ch["num"]])
+            text = files[ch["num"]]
             total_chars += body_chars(text)
             n_chapters += 1
             body.append(chapter_xml(ch["num"], ch.get("title", ""), text))

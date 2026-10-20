@@ -6,8 +6,8 @@
 import argparse
 
 from bookcommon import (
-    body_chars, chapter_files, iter_chapters, load_book, load_outline,
-    page_chars, read_chapter_text,
+    body_chars, chapter_files, chapter_texts, iter_chapters, load_book,
+    load_outline, page_chars,
 )
 
 
@@ -24,6 +24,7 @@ def main():
     outline = load_outline(a.dir)
     pc = page_chars(book)
     files = chapter_files(a.dir)
+    texts = chapter_texts(a.dir)
 
     total_chars = 0
     total_target = 0
@@ -34,7 +35,7 @@ def main():
         if not (a.first <= n <= a.last):
             continue
         target = int(ch.get("target_pages", 10) * pc)
-        chars = body_chars(read_chapter_text(files[n])) if n in files else 0
+        chars = body_chars(texts[n]) if n in texts else 0
         total_chars += chars
         total_target += target
         if chars == 0:

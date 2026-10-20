@@ -5,6 +5,10 @@
   book_plan.py batches  <dir> --size 5 [--only-missing]
   book_plan.py show     <dir> [--no-spoilers] [--part N]
   book_plan.py check    <dir>
+  book_plan.py trim     <dir> --chapters 45 --parts 1-20,21-36,37-45
+
+trim сокращает план до N глав (книга короче, чем задумано) и при желании
+заново раскладывает главы по частям: диапазоны через запятую, по одному на часть.
 
 План хранится в plan/parts/part_NN.json — по файлу на часть, поэтому разные
 субагенты могут заполнять разные части одновременно.
@@ -15,7 +19,7 @@ import os
 import shutil
 
 from bookcommon import (
-    chapter_files, chapter_id, die, iter_chapters, load_book, load_json,
+    chapter_texts, chapter_id, die, iter_chapters, load_book, load_json,
     load_outline, page_chars, part_path, parts_dir, save_json,
 )
 
@@ -171,7 +175,7 @@ def cmd_batches(a):
             os.remove(os.path.join(bdir, name))
 
     flat = list(iter_chapters(outline))
-    files = chapter_files(a.dir) if a.only_missing else {}
+    files = chapter_texts(a.dir) if a.only_missing else {}
     scripts = os.path.dirname(os.path.abspath(__file__))
 
     groups, cur = [], []
@@ -211,6 +215,35 @@ def cmd_batches(a):
         print("  batch_%03d.md: главы %d–%d" % (bi, group[0][3]["num"], group[-1][3]["num"]))
 
 
+def cmd_trim(a):
+    book = load_book(a.dir)
+    outline = load_outline(a.dir)
+    chapters = [ch for _, ch in iter_chapters(outline) if ch["num"] <= a.chapters]
+    by_num = {ch["num"]: ch for ch in chapters}
+    if a.parts:
+        ranges = []
+        for r in a.parts.split(","):
+            lo, _, hi = r.partition("-")
+            ranges.append((int(lo), int(hi or lo)))
+    else:
+        ranges = []
+        for part in outline["parts"]:
+            nums = [ch["num"] for ch in part["chapters"] if ch["num"] <= a.chapters]
+            if nums:
+                ranges.append((nums[0], nums[-1]))
+    old = {p["num"]: p for p in outline["parts"]}
+    shutil.rmtree(parts_dir(a.dir))
+    os.makedirs(parts_dir(a.dir))
+    for i, (lo, hi) in enumerate(ranges, 1):
+        part = dict(old.get(i, {"num": i, "label": part_label(i), "title": "", "synopsis": ""}))
+        part["chapters"] = [by_num.get(n, {"num": n, "title": "", "pov": "", "summary": "", "beats": [],
+                                           "ends_with": "", "target_pages": 10}) for n in range(lo, hi + 1)]
+        save_json(part_path(a.dir, i), part)
+    book["target_pages"] = int(sum(ch.get("target_pages", 10) for ch in by_num.values()))
+    save_json(os.path.join(a.dir, "book.json"), book)
+    print("План: %d глав, частей %d, цель %d стр." % (a.chapters, len(ranges), book["target_pages"]))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -230,8 +263,13 @@ def main():
     s.add_argument("--part", type=int)
     s = sub.add_parser("check")
     s.add_argument("dir")
+    s = sub.add_parser("trim")
+    s.add_argument("dir")
+    s.add_argument("--chapters", type=int, required=True)
+    s.add_argument("--parts", help="например 1-20,21-36,37-45")
     a = ap.parse_args()
-    rc = {"skeleton": cmd_skeleton, "batches": cmd_batches, "show": cmd_show, "check": cmd_check}[a.cmd](a)
+    rc = {"skeleton": cmd_skeleton, "batches": cmd_batches, "show": cmd_show, "check": cmd_check,
+          "trim": cmd_trim}[a.cmd](a)
     raise SystemExit(rc or 0)
 
 
