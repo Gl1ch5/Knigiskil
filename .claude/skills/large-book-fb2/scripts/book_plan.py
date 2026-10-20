@@ -32,6 +32,8 @@ from bookcommon import (
 ORDINALS = ["первая", "вторая", "третья", "четвёртая", "пятая", "шестая", "седьмая",
             "восьмая", "девятая", "десятая", "одиннадцатая", "двенадцатая"]
 
+WRITE_CHARS = 80000  # знаков в одной записи: ~35k токенов, запас до лимита вывода ~40k
+
 # ключевые точки структуры: доля объёма → роль главы (references/craft.md)
 KEY_POINTS = [(0.0, "крючок и завязка"), (0.10, "событие-катализатор"),
               (0.25, "точка невозврата"), (0.50, "середина: переворот"),
@@ -203,33 +205,54 @@ def cmd_next(a):
             print("Все главы написаны. Дальше: book_lint.py, book_build.py --zip, book_validate.py")
             return 0
     part, ch = flat[idx]
-    n, cid = ch["num"], chapter_id(ch["num"])
-    done, need = written(ch), target(ch)
+    done = written(ch)
     total_target = sum(target(c) for _, c in flat)
     before = sum(target(c) for _, c in flat[:idx])
+    # одна запись Write — до WRITE_CHARS знаков: короткие ненаписанные главы берём блоком
+    group = [idx]
+    if not done:
+        cum = target(ch)
+        j = idx + 1
+        while (len(group) < 3 and j < len(flat) and not written(flat[j][1])
+               and flat[j][0]["num"] == part["num"] and cum + target(flat[j][1]) <= WRITE_CHARS):
+            cum += target(flat[j][1])
+            group.append(j)
+            j += 1
+    n, cid = ch["num"], chapter_id(ch["num"])
+    last_n = flat[group[-1]][1]["num"]
     pieces = files.get(n, [])
-    nxt_file = "%s.txt" % cid if not pieces else "%s.%d.txt" % (cid, len(pieces) + 1)
+    if len(group) > 1:
+        nxt_file = "%s-%04d.txt (главы %d–%d одним Write, каждая со своей строкой «# Название»)" % (
+            cid, last_n, n, last_n)
+    elif pieces:
+        nxt_file = "%s.%d.txt (продолжение)" % (cid, len(pieces) + 1)
+    else:
+        nxt_file = "%s.txt (вся глава одним Write)" % cid
+    need = sum(target(flat[g][1]) for g in group)
 
-    out = ["# Глава %d из %d: %s" % (n, len(flat), chapter_title(ch, texts.get(n)) or "—"),
+    head = "# Глава %d из %d" % (n, len(flat)) if len(group) == 1 else "# Главы %d–%d из %d" % (n, last_n, len(flat))
+    out = [head,
            "Книга «%s», %s. Позиция: %.0f%% книги. %s. %s"
            % (book.get("title"), AUTHOR, 100.0 * before / max(total_target, 1),
               part.get("label") or part_label(part["num"]), part.get("title", ""))]
     if part.get("synopsis"):
         out.append("Синопсис части: %s" % part["synopsis"])
-    out += ["", "## План главы"]
-    if ch.get("function"):
-        out.append("Роль в структуре: %s" % ch["function"])
-    if ch.get("pov"):
-        out.append("Точка зрения: %s" % ch["pov"])
-    out.append("Содержание: %s" % (ch.get("summary") or "—"))
-    sc = scenes(ch)
-    if sc:
-        out.append("Сцены:")
-        out += ["  %d. %s" % (i + 1, b) for i, b in enumerate(sc)]
-    if ch.get("ends_with"):
-        out.append("Концовка (крючок): %s" % ch["ends_with"])
-    out.append("Объём: %d из %d знаков (~%s стр.). Следующий файл: chapters/%s"
-               % (done, need, ch.get("target_pages"), nxt_file))
+    for g in group:
+        gch = flat[g][1]
+        out += ["", "## План главы %d: %s" % (gch["num"], chapter_title(gch, texts.get(gch["num"])) or "—")]
+        if gch.get("function"):
+            out.append("Роль в структуре: %s" % gch["function"])
+        if gch.get("pov"):
+            out.append("Точка зрения: %s" % gch["pov"])
+        out.append("Содержание: %s" % (gch.get("summary") or "—"))
+        sc = scenes(gch)
+        if sc:
+            out.append("Сцены:")
+            out += ["  %d. %s" % (i + 1, b) for i, b in enumerate(sc)]
+        if gch.get("ends_with"):
+            out.append("Концовка (крючок): %s" % gch["ends_with"])
+        out.append("Объём главы: не меньше %d знаков (~%s стр.)" % (target(gch), gch.get("target_pages")))
+    out += ["", "Написано: %d из %d знаков. Записать в: chapters/%s" % (done, need, nxt_file)]
 
     sums = summaries(a.dir)
     prev = []
@@ -248,14 +271,14 @@ def cmd_next(a):
         for pch, text in reversed(prev):
             out.append("— Глава %d «%s»: %s" % (pch["num"], chapter_title(pch, texts.get(pch["num"])),
                                                 text.replace("\n", " ")))
-    if idx + 1 < len(flat):
-        nch = flat[idx + 1][1]
+    if group[-1] + 1 < len(flat):
+        nch = flat[group[-1] + 1][1]
         out += ["", "## Следующая глава %d «%s»" % (nch["num"], nch.get("title", "")),
                 nch.get("summary") or "—", "Подведи к ней, но не забегай вперёд."]
     else:
         out += ["", "## Это последняя глава: кульминация/развязка, ответ на главный вопрос книги."]
-    out += ["", "После записи: book_lint.py %s --chapter %d, чек-лист craft.md, конспект plan/summaries/%s.md"
-            % (a.dir, n, cid)]
+    out += ["", "После записи: book_lint.py %s --from %d --to %d, чек-лист craft.md, конспект plan/summaries/%s.md"
+            % (a.dir, n, last_n, cid if len(group) == 1 else "%s-%04d" % (cid, last_n))]
     print("\n".join(out))
     return 0
 
