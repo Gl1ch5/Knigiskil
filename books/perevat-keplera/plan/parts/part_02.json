@@ -1,0 +1,53 @@
+{
+  "num": 2,
+  "label": "Часть вторая",
+  "title": "Колодец",
+  "synopsis": "Признание ИИ, выход в открытый космос, жертва Юрия и сигнал с Земли.",
+  "chapters": [
+    {
+      "num": 7,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 8,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 9,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 10,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 11,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    }
+  ]
+}
