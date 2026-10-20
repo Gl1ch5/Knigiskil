@@ -1,0 +1,53 @@
+{
+  "num": 1,
+  "label": "Часть первая",
+  "title": "Эталон",
+  "synopsis": "Ночная смена, голос Нелли, тег «эталон» и первые подозрения.",
+  "chapters": [
+    {
+      "num": 1,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 2,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 3,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 4,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 5,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    }
+  ]
+}

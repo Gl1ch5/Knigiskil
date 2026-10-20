@@ -1,0 +1,53 @@
+{
+  "num": 2,
+  "label": "Часть вторая",
+  "title": "Облигации",
+  "synopsis": "Пальцы поэта, аптекарь, облигации, визит Кастро и признание Соузы.",
+  "chapters": [
+    {
+      "num": 6,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 7,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 8,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 9,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    },
+    {
+      "num": 10,
+      "title": "",
+      "pov": "",
+      "summary": "",
+      "beats": [],
+      "ends_with": "",
+      "target_pages": 10.0
+    }
+  ]
+}
