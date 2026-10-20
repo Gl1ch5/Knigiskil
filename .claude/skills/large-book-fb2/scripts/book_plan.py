@@ -67,7 +67,7 @@ def cmd_skeleton(a):
         })
     book["target_pages"] = pages
     save_json(os.path.join(a.dir, "book.json"), book)
-    print("Каркас: частей %d,, глав %d по ~%.1f стр. (~%d знаков) → %s"
+    print("Каркас: частей %d, глав %d по ~%.1f стр. (~%d знаков) → %s"
           % (n_parts, n_ch, per_ch, per_ch * page_chars(book), d))
     print("Теперь заполни в каждой главе: title, pov, summary, beats, ends_with.")
 
